@@ -10,7 +10,7 @@ var User = require('./app/models/user');
 
 var port = process.env.PORT || 8080;
 mongoose.connect(config.database);
-app.set('supersecret', config.secret);
+app.set('secret', config.secret);
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -29,7 +29,9 @@ app.get('/setup', function(req, res) {
 	});
 	
 	user.save(function(err) {
-		if(err) throw err;
+		if(err) {
+			throw err;
+		}
 		console.log('User saved successfully');
 		res.json({ success: true });
 	});
@@ -38,15 +40,69 @@ app.get('/setup', function(req, res) {
 
 var apiRouter = express.Router();
 
+apiRouter.post('/authenticate', function(req, res) {
+	User.findOne({
+		name: req.body.name
+	}, function(err, user) {
+		if(err) {
+			throw err;
+		}
+		if(!user) {
+			res.json({ success: false, message: 'Authentication failed: user not found.'});
+		} else {
+			if(user.password !== req.body.password) {
+				res.json({ success: false, message: 'Authentication failed: wrong password.' });
+			} else {
+			
+				var token = jwt.sign(user, app.get('secret'), {
+					expiresIn: 86400 // expires in 24 hours
+		        });
+			
+				res.json({
+					success: true,
+					message: 'Authentication success.',
+					token: token
+				});
+			}
+		}
+	});
+});
+
+apiRouter.use(function(req, res, next) {
+	
+	var token = req.body.token || req.query.token || req.headers['x-access-token'];
+	
+	console.log('token = ' + token);
+	if(token) {
+		jwt.verify(token, app.get('secret'), function(err, decoded) {
+			if(err) {
+				return res.json({ success: false, message: 'Authentication failed: invalid token' });
+			} else {
+				req.decoded = decoded;
+				next();
+			}
+		});
+	} else {
+		return res.status(403).send({
+			success: false,
+			message: 'No token provided'
+		});
+	}
+});
+
 apiRouter.get('/', function(req, res) {
 	res.json({ message: 'NNNNNNNN api' });
 });
 
 apiRouter.get('/users', function(req, res) {
-	User.find({}, function(err, data) {
-		res.json(data);
+	User.find({}, function(err, users) {
+		if(err) {
+			throw err;
+		}
+		res.json(users);
 	});
 });
+
 
 app.use('/api', apiRouter);
 
